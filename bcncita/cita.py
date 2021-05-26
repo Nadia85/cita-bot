@@ -47,6 +47,7 @@ class OperationType(str, Enum):
     SOLICITUD = "4"  # EXTRANJERIA - SOLICITUD DE AUTORIZACIONES
     TOMA_HUELLAS = "4010"  # POLICIA-TOMA DE HUELLAS (EXPEDICIÓN DE TARJETA) Y RENOVACIÓN DE TARJETA DE LARGA DURACIÓN
     AUTORIZACION_DE_REGRESO = "20"  # POLICIA-AUTORIZACIÓN DE REGRESO
+    FAMILIARES_RESIDENTES = "4060"  # FAMILIARES DE RESIDENTES COMMUNITARIOS
 
 
 class Office(str, Enum):
@@ -263,6 +264,7 @@ def try_cita(context: CustomerProfile, cycles: int = CYCLES):
 
         if result:
             success = True
+            # speaker.say("YOO ARE WIN")  # TODO add this
             logging.info("WIN")
             break
 
@@ -428,6 +430,31 @@ def autorizacion_de_regreso_step2(driver: webdriver, context: CustomerProfile):
     # Enter doc number, name and year of birth
     element = driver.find_element_by_id("txtIdCitado")
     element.send_keys(context.doc_value, Keys.TAB, context.name, Keys.TAB, context.year_of_birth)
+
+    success = process_captcha(driver, context)
+    if not success:
+        return
+
+    return True
+
+
+def familiares_residentes(driver: webdriver, context: CustomerProfile):
+    # 4. Data form:
+    try:
+        WebDriverWait(driver, DELAY).until(EC.presence_of_element_located((By.ID, "txtIdCitado")))
+    except TimeoutException:
+        logging.error("Timed out waiting for form to load")
+        return None
+
+    # Select doc type
+    if context.doc_type == DocType.PASSPORT:
+        driver.find_element_by_id("rdbTipoDocPas").send_keys(Keys.SPACE)
+    elif context.doc_type == DocType.NIE:
+        driver.find_element_by_id("rdbTipoDocNie").send_keys(Keys.SPACE)
+
+    # Enter doc number, name and year of birth
+    element = driver.find_element_by_id("txtIdCitado")
+    element.send_keys(context.doc_value, Keys.TAB, context.name)
 
     success = process_captcha(driver, context)
     if not success:
@@ -602,7 +629,8 @@ def cycle_cita(driver: webdriver, context: CustomerProfile):
             driver.set_page_load_timeout(300 if context.first_load else 50)
             driver.get(fast_forward_url)
         except TimeoutException:
-            logging.error("Timed out loading initial page")
+            speaker.say("ATTENTION")
+            logging.error("Timed out loading initial page")   # TODO add speaker
             continue
         break
     context.first_load = False
@@ -633,6 +661,8 @@ def cycle_cita(driver: webdriver, context: CustomerProfile):
         success = certificados_ue_step2(driver, context)
     elif context.operation_code == OperationType.AUTORIZACION_DE_REGRESO:
         success = autorizacion_de_regreso_step2(driver, context)
+    elif context.operation_code == OperationType.FAMILIARES_RESIDENTES:
+        success = familiares_residentes(driver, context)
 
     if not success:
         return None
@@ -644,7 +674,7 @@ def cycle_cita(driver: webdriver, context: CustomerProfile):
         return None
 
     # 5. Solicitar cita:
-    solcitar = solicitar_cita(driver, context)
+    solcitar = solicitar_cita(driver, context)   # TODO need to fix or is catalan?
     if solcitar is None:
         return None
 
